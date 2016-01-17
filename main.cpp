@@ -23,6 +23,9 @@ int main( int argc , char* argv[] )
 
     /************ XXXXXXXXXX **************/
 
+    string line ;
+
+    while( getline( fp , line ) ) cout << line << endl ;
 
 
 

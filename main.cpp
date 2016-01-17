@@ -2,7 +2,13 @@
 #include <cstring>
 #include <cstdio>
 #include <fstream>
+#include <map>
 using namespace std ;
+
+const map<string,string>OPTAB = { {"STL","14"},{"LDB","68"},{"JSUB","48"},{"LDA","00"},{"COMP","28"},{"JEQ","30"}
+                                    ,{"J","3C"},{"STA","0C"},{"CLEAR","B4"},{"LDT","74"},{"TD","E0"},{"RD","D8"},{"COMPR","A0"}
+                                    ,{"STCH","54"},{"TIXR","D8"},{"JLT","38"},{"STX","10"},{"RSUB","4C"},{"LDCH","50"},{"WD","DC"}};
+map<string,string>SYMTAB ;
 
 int main( int argc , char* argv[] )
 {
@@ -21,10 +27,12 @@ int main( int argc , char* argv[] )
         return 0 ;
     }
 
-    /************ XXXXXXXXXX **************/
+    /************* PROGRAM ***************/
+
+    string LOCCTR ;
+
 
     string line ;
-
     while( getline( fp , line ) ) cout << line << endl ;
 
 

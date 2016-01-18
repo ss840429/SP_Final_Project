@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <math.h>
 using namespace std ;
 
 #define MAXLINE 500
@@ -18,6 +19,13 @@ map<string,string>OPTAB = { {"STL","14"},{"LDB","68"},{"JSUB","48"},{"LDA","00"}
 map<string,int>Register = { {"A",0},{"X",1},{"L",2},{"B",3},{"S",4},{"T",5} } ;
 map<string,int>SYMTAB ;
 
+void toupper( string& ss )
+{
+    for( int i = 0 ; i < ss.size() ; ++i ){
+        if( ss[i] >= 'a' && ss[i] <= 'z' )
+            ss[i] -= 'a' - 'A' ;
+    }
+}
 
 int main( int argc , char* argv[] )
 {
@@ -133,29 +141,38 @@ int main( int argc , char* argv[] )
     // Pass 2
 
     stringstream object[MAXLINE] ;
+    vector<int> jsubpos ;
     PC = BASE ; count = 0 ;
-    int reg[10] = {0} ;
 
     while( count != numline )
     {
         PC = address[count+1] ;
+        int k = 1 ;
+        while( PC == -1 ){
+            k ++ ;
+            PC = address[count+k] ;
+        }
         ss.clear() ;
         vector<string>S ;
         ss << command[count] ;
         while( ss >> tmp ) S.push_back(tmp) ;
 
-        int compr = 0 ;
         int n = 0 , i = 0 , x = 0 , b = 0 , p = 0 , e = 0;
 
         if( S.size() == 3 ) S.erase(S.begin()) ;
+        if( S[0] == "JSUB" || S[0] == "+JSUB" )
+            jsubpos.push_back(address[count]+1) ;
 
-        if(S[0] == "RSUB" ) object[count] << "4F0000" ;
+        if( S[0] == "RESW" || S[0] == "RESB" ) {
+            count += 1 ;
+            continue ;
+        }
+        else if(S[0] == "RSUB" ) object[count] << "4F0000" ;
         else if(S[0] == "BASE" ){
-            BASE = atoi(S[1].c_str()) ;
+            BASE = SYMTAB[S[1]] ;
         }
         else if( S[0] == "CLEAR" ){
             object[count] << OPTAB[S[0]] << Register[S[1]] << "0" ;
-            reg[Register[S[1]]] = 0 ;
         }
         else if( S[0] == "BYTE" ){
             if( S[1][0] == 'C' ){
@@ -169,52 +186,131 @@ int main( int argc , char* argv[] )
         }
         else if( S[0] == "TIXR" ){
             object[count] << OPTAB[S[0]] << Register[S[1]] << "0" ;
-            reg[Register[S[1]]] = reg[Register[S[1]]]+1 ;
         }
         else if( S[0] == "COMPR" ){
             string r1 , r2 ; r1+=S[1][0] , r2+= S[1][2] ;
             object[count] << OPTAB[S[0]] << Register[r1] << Register[r2] ;
-            if( reg[Register[r1] ] < reg[Register[r2] ] ) compr = -1 ;
-            else if( reg[Register[r1]] > reg[Register[r2]] ) compr = 1 ;
-            else compr = 0 ;
         }
         else
         {
-            if( S[0][0] == '+' ) e = 1 ; // format 4
+            if( S[0][0] == '+' ){
+                e = 1 ;                 // format 4
+                S[0].erase(S[0].begin()) ;
+            }
             else e = 0 ;                //format 3
+
 
             if( S[1][0] == '#' ){
                 n = 0 , i = 1 ;
+                S[1].erase(S[1].begin()) ;
             }
             else if( S[1][0] == '@' ){
                 n = 1 , i = 0 ;
+                S[1].erase(S[1].begin()) ;
             }
             else{
                 n = 1 , i = 1 ;
             }
 
+            if( S[1].size() >= 2 && S[1].substr( S[1].size()-2 , 2 ) == ",X" ){
+                x = 1 ;
+                S[1].erase( S[1].end()-1 ) ;
+                S[1].erase( S[1].end()-1 ) ;
+            }
 
+            string opcode = OPTAB[ S[0] ] ;
+            opcode[1] += n*2+i ;
 
+            if( opcode[1] > '9' && opcode[1] < 'A' )
+            {
+                opcode[1] -= '9' - 'A' + 1 ;
+            }
+            else if( opcode[1] > 'F' )
+            {
+                opcode[0] += 1 ;
+                if( opcode[0] == '9'+1 ) opcode[0] = 'A' ;
+                opcode[1] -= 'F' - '0' ;
+            }
 
+            object[count] << opcode ;
+
+            if( e == 1 ){
+                object[count] << hex << e ;
+                if( i && !n ) object[count] << setfill('0') << setw(5) << hex << atoi(S[1].c_str()) ;
+                else object[count] << setfill('0') << setw(5) << SYMTAB[S[1]] ;
+            }
+            else{
+                    if( SYMTAB.find(S[1]) != SYMTAB.end()  )
+                    {
+                        if( abs(SYMTAB[S[1]]-PC) < 2048 ){
+                            p = 1 ;
+                            object[count] << hex << x*8+b*4+p*2+e ;
+                            stringstream zs ;
+                            zs << hex << setw(3) << setfill('0') << SYMTAB[S[1]] - PC ;
+                            string zst ;
+                            zs >> zst ;
+                            while( zst.size() > 3 ) zst.erase( zst.begin() ) ;
+                            object[count] << zst ;
+                        }
+                        else if ( abs(SYMTAB[S[1]]-BASE) < 4096 ){
+                            b = 1 ;
+                            object[count] << hex << x*8+b*4+p*2+e ;
+                            object[count] << hex << setw(3) << setfill('0') <<  SYMTAB[S[1]] - BASE ;
+                        }
+                        else object[count] << "Error" ;
+                    }
+                    else
+                    {
+                        int shift = atoi( S[1].c_str() ) ;
+                        if( abs(shift) < 2048 ){
+                            p = 1 ;
+                            object[count] << hex << x*8+b*4+p*2+e ;
+                            object[count] << hex << setw(3) << setfill('0') << shift ;
+                        }
+                        else if ( shift < 4096 ){
+                            b = 1 ;
+                            object[count] << hex << x*8+b*4+p*2+e ;
+                            object[count] << hex << setw(3) << setfill('0') << shift ;
+                        }
+                        else object[count] << "Error" ;
+                    }
+                }
         }
-
-
-
         count += 1 ;
         S.clear() ;
     }
 
+    int tc = 0 , cc = 0 , last = 0 ;
+    while( cc != numline )
+    {
+        tc += object[cc++].str().size() ;
 
-    for( int i = 0 ; i < numline-1 ; ++i ){
-        string sssss ;
-        object[i] >> sssss ;
-        if( !sssss.size() ) continue ;
-        //ofp << "T" << setw(6) << address[i] ;
-        ofp << sssss << endl ;
+        if( tc > 70 || command[cc].find("RESW")!=string::npos|| command[cc].find("RESB")!=string::npos || cc == numline-1  )
+        {
+            if( tc/2 == 0 ) continue ;
+
+            string str ;
+            while( object[last].str().size() <= 1 ) last ++ ;
+            ofp << "T" << setw(6) << address[last] << hex << tc/2 ;
+            for( int i = last ; i < cc ; ++i ){
+                object[i] >> str ;
+                if( str.size() <= 1 ) continue ;
+                toupper(str) ;
+                ofp << str ;
+            }
+            ofp << endl ;
+            tc = 0 ;
+            last = cc ;
+        }
     }
 
-    // end
+    // For M instruction
 
+    for( auto& e : jsubpos )
+        ofp << "M" << setw(6) << e << "05" << endl ;
+
+    // end
+    ofp << "E" << setw(6) << setfill('0') << START ;
 
     return 0 ;
 }
